@@ -284,14 +284,12 @@ void search(char **arg){
 	char* path;
 	if (!strcmp(arg[0], "pwd")){
 		// write current pathname to std output
-	// 	printf("PWD was searched\n");
-		path = "/bin"; 
+		path = $PATH;
 		printf("%s\n",path);  
 	}
 	
 	else if (!strcmp(arg[0], "cd")){
 		// go thru file system to find cd
-	//	printf("CD was searched\n"); 
 		printf("new search: %s\n", arg[1]);
 		if (!strcmp(arg[1], "..")){
 			path = "/bin"; 
@@ -299,9 +297,8 @@ void search(char **arg){
 		}
 		else{
 			printf("/bin/%s\n", arg[1]); 
-			path = "/bin/arg[1]";
+			path = chdir(arg[1]); 
 		} 		
-//if (!strcmp(
 	}
 }// end file search
 
