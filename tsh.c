@@ -308,12 +308,8 @@ void search(char **arg){
  */
 int builtin_cmd(char **argv) // 25 lines
 {
-   
-   /*
-   int jid;
    struct job_t *job;
-   jid = job->jid
-   */
+   
    //printf("builtin_cmd %s\n";, argv);  
     if (!strcmp(argv[0], "quit")){
 	exit(0); 
@@ -330,21 +326,15 @@ int builtin_cmd(char **argv) // 25 lines
 	do_bgfg(argv); 
 	return -1; 
     } 
-/*
-    else if (!strcmp(argv[0], environ)){
-	//execute the program 
-	return -1; 
-    }
-  */  else if (!strcmp(argv[0], "ls")){
+    else if (!strcmp(argv[0], "ls")){
 	// show the current files in path
     }
-   /* 
+    
     if (!strcmp(argv[1], "&")){
-		job->state = BG; 
-		kill(-(job->pid), SIGCONT); 
-		// send SIGCONT to ensure all states continue to run
-
-    }*/ 
+	addjob(jobs, fgpid(job), BG, argv[1]); 
+	kill(-(job->pid), SIGCONT); 
+	// send SIGCONT to ensure all states continue to run
+    } 
 /* 
     else if (!strcmp(atoi(argv[0]), "echo")){
 	// write to stdout
@@ -384,53 +374,54 @@ int builtin_cmd(char **argv) // 25 lines
 /* 
  * do_bgfg - Execute the builtin bg and fg commands
  */
-void do_bgfg(char **argv) // 50 lines 
+void do_bgfg(char **argv)
 {
+	// find job
+	//char *state = argv[0];
+	pid_t pid;
+	int jid;
+	struct job_t *job;
+	//struct job_t *list; 
 
-// find job
-//char *state = argv[0];
-pid_t pid; 
-int jid;
-struct job_t *job;
-
-if (argv[1] == NULL){
-	printf("%s command requires PID or %%jobid argument\n", argv[0]);
-	fflush(stdout); 
-	return;
-}
-// determine pid and jid -- only jid has '%'
-// string to int = atoi(argv[1]) 
-if ((pid = atoi(argv[1])) > 0){
-	job = getjobpid(jobs, pid);
-	if (job == NULL){
-		printf("No such process\n"); 
-		fflush(stdout); 
+	if (argv[1] == NULL){
+		printf("%s command requires PID or %%jobid argument\n", argv[0]);
+		fflush(stdout);
 		return;
 	}
-}
-else if ((jid = atoi(argv[1]+1)) > 0){
-	//jid = atoi(argv[1]+1); 
-	if ((job = getjobjid(jobs, jid)) == NULL){ 
-		printf("No such job!\n"); 
-		fflush(stdout); 
-		return;
+	
+	// determine pid and jid -- only jid has '%'
+	// string to int = atoi(argv[1])
+	if ((pid = atoi(argv[1])) > 0){
+		job = getjobpid(jobs, pid);
+		if (job == NULL){
+			printf("No such process\n");
+			fflush(stdout);
+			return;
+		}
 	}
-}
-else{
-	printf("%s: argument must be a PID or %%jobid argument!\n", argv[0]); 
-	fflush(stdout); 
-}
+	else if ((jid = atoi(argv[1]+1)) > 0){
+		//jid = atoi(argv[1]+1);
+		if ((job = getjobjid(jobs, jid)) == NULL){
+			printf("No such job!\n");
+			fflush(stdout);
+			return;
+		}
+	}
+	else{
+		printf("%s: argument must be a PID or %%jobid argument!\n", argv[0]);
+		fflush(stdout);
+	}
 
-	// change the state 
-	jid = job->jid;	
+	// change the state
+	jid = job->jid;
 	if (!strcmp(argv[0], "fg")){
 		job->state = FG;
 		// send SIGCONT to ensure all states continue to run
 		kill(-(job->pid), SIGCONT);
-		waitfg(job->pid); 
+		waitfg(job->pid);
 	}
 	if (!strcmp(argv[0], "bg")){
-		job->state = BG; 
+		addjob(jobs, fgpid(job), BG, argv[0]); 
 		// send SIGCONT to ensure all states continue to run
 		kill(-(job->pid), SIGCONT);
 	}
@@ -503,49 +494,53 @@ void waitfg(pid_t pid) // 20 lines
  *     available zombie children, but doesn't wait for any other
  *     currently running children to terminate.  
  */
-void sigchld_handler(int sig) // 80 lines 
+void sigchld_handler(int sig)
 {
 // FG -> ST : Ctrl-Z
 // ST -> FG : FG
 // ST -> BG : BG
 // BG -> FG : FG
-	int status; 
-	pid_t pid; 
+	int status;
+	pid_t pid;
 
 	while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED|WCONTINUED)) > 0){
-	    	struct job_t *job = getjobpid(jobs, pid); 
-// Child terminated normally by exiting
+	    	struct job_t *job = getjobpid(jobs, pid);
+	    	
+		// Child terminated normally by exiting
 		if (WIFEXITED(status)){
-			fflush(stdout); 
-			deletejob(jobs, pid); 
+			fflush(stdout);
+			deletejob(jobs, pid);
 	    	}
-	// ctrl-c
-		if (WIFSIGNALED(status)){ 
-			int jid = pid2jid(pid); 
+		
+		// ctrl-c
+		if (WIFSIGNALED(status)){
+			int jid = pid2jid(pid);
 			jid = job->jid;
-printf("Job [%d] (%d) terminated by signal %d \n", jid, pid, WTERMSIG(status)); 
-			fflush(stdout); 
-			deletejob(jobs, pid); 
+			printf("Job [%d] (%d) terminated by signal %d \n", jid, pid, WTERMSIG(status));
+			fflush(stdout);
+			deletejob(jobs, pid);
 		}
-	// ctrl-z -- Stopped by a signal that can be traced or untraced
-		if (WIFSTOPPED(status)){ 
-			fflush(stdout); 
+
+		// ctrl-z -- Stopped by a signal that can be traced or untraced
+		if (WIFSTOPPED(status)){
+			fflush(stdout);
 			// change state to stopped
-			int jid = pid2jid(pid); 
+			int jid = pid2jid(pid);
 			jid = job->jid;
-			job->state = ST; 
-printf("Job [%d] (%d) stopped by signal %d\n", jid, pid, WSTOPSIG(status));
+			job->state = ST;
+			printf("Job [%d] (%d) stopped by signal %d\n", jid, pid, WSTOPSIG(status));
 		}
-// Child was resumed with a SIGCONT signal
+
+		// Child was resumed with a SIGCONT signal
 		if (WIFCONTINUED(status)){
 			fflush(stdout);			
 			// should be changed into background
-			int jid = pid2jid(pid); 
+			int jid = pid2jid(pid);
 			jid = job->jid;
 			if (job->state == ST){
 				job->state = BG;
 			}
-printf("Job [%d] (%d) stopped by signal %d\n", jid, pid, WTERMSIG(status));
+			printf("Job [%d] (%d) stopped by signal %d\n", jid, pid, WTERMSIG(status));
 		}
 	}
     return;
